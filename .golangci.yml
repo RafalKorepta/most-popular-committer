@@ -36,6 +36,8 @@ linters:
 
 run:
   concurrency: 8
+  skip-dirs:
+    - pkg/ratelimit
 
 output:
   format: colored-line-number

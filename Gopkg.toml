@@ -21,6 +21,14 @@
   version = "0.0.3"
 
 [[constraint]]
+  name = "github.com/uber/jaeger-client-go"
+  revision = "68407ce61637ffc3b1c455bd02e25a9da3fb45de"
+
+[[constraint]]
+  name = "github.com/uber/jaeger-lib"
+  version = "2.0.0"
+
+[[constraint]]
   name = "github.com/spf13/viper"
   version = "1.3.1"
 

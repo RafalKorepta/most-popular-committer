@@ -1,3 +1,6 @@
 ---
 port_number: 9091
 debug: true
+secure: false
+rate: 25
+capacity: 10

@@ -17,6 +17,7 @@ package cmd
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 
 	"github.com/RafalKorepta/most-popular-committer/pkg/server"
 	"github.com/spf13/cobra"
@@ -25,7 +26,13 @@ import (
 )
 
 const (
-	portNumberFlag = "port_number"
+	portNumberFlag   = "port_number"
+	certPathFlag     = "certs_path"
+	certFileNameFlag = "cert_file_name"
+	keyFileNameFlag  = "key_file_name"
+	secureFlag       = "secure"
+	serverCapacity   = "capacity"
+	serverRate       = "rate"
 )
 
 // serveCmd represents the serve command
@@ -44,7 +51,13 @@ the given programmatic language`,
 		if err != nil {
 			zap.L().Fatal(fmt.Sprintf("Can not listen on localhost:%d", viper.GetInt(portNumberFlag)), zap.Error(err))
 		}
-		srv, err := server.NewServer(listener, server.WithLogger(zap.L()))
+		srv, err := server.NewServer(listener,
+			server.WithLogger(zap.L()),
+			server.WithCapacity(viper.GetInt64(serverCapacity)),
+			server.WithRate(viper.GetInt64(serverRate)),
+			server.WithSecure(viper.GetBool(secureFlag)),
+			server.WithCertFile(filepath.Join(viper.GetString(certPathFlag), viper.GetString(certFileNameFlag))),
+			server.WithKeyFile(filepath.Join(viper.GetString(certPathFlag), viper.GetString(keyFileNameFlag))))
 		if err != nil {
 			zap.L().Fatal("Unable to create server", zap.Error(err))
 		}
@@ -60,6 +73,19 @@ func init() {
 
 	serveCmd.Flags().IntP(portNumberFlag, "p", 9091,
 		"the port on which the server will be listen on incoming requests")
+	serveCmd.Flags().Int64P(serverCapacity, "c", 10,
+		"server request maximum capacity")
+	serveCmd.Flags().Int64P(serverRate, "r", 25,
+		"server per second request rate")
+	serveCmd.Flags().String(certPathFlag, "pkg/certs/local_certs",
+		"the path where key and certificate are located")
+	serveCmd.Flags().String(certFileNameFlag, "server.pem",
+		"the path where key and certificate are located")
+	serveCmd.Flags().String(keyFileNameFlag, "server.key",
+		"the path where key and certificate are located")
+	serveCmd.Flags().BoolP(secureFlag, "s", false,
+		"flag which change if email service will be serving tls connection or not")
+
 	if err := viper.BindPFlags(serveCmd.Flags()); err != nil {
 		zap.L().Error("Unable to bind flags")
 	}

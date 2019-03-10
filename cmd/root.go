@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate go run script/gen_markdown_docs.go
+
 package cmd
 
 import (
@@ -48,7 +50,7 @@ var (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "most-popular-projects",
+	Use:   "most-popular-committer",
 	Short: "Most popular github project per language",
 	Long: `Server for finding most popular github
 projects per programmatic language`,
@@ -90,7 +92,7 @@ func initConfig() {
 	}
 
 	// Update global logger in debug configuration
-	cfg := zap.NewProductionConfig()
+	cfg := zap.NewDevelopmentConfig()
 	if viper.GetBool("debug") {
 		cfg.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
 	}
