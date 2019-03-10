@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -43,6 +42,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/opentracing/opentracing-go"
 	assetfs "github.com/philips/go-bindata-assetfs"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/uber/jaeger-client-go/config"
 	"github.com/uber/jaeger-lib/metrics/prometheus"
@@ -93,13 +93,13 @@ func NewServer(l net.Listener, opts ...Option) (*Server, error) {
 func (s *Server) Serve() error {
 	tracerCloser, err := initializeGlobalTracer(s.serverName, zap.L(), zap.S())
 	if err != nil {
-		return err
+		return errors.Wrap(err, "initializing global tracer")
 	}
 	defer tracerCloser.Close()
 
 	srv, grpcServer, err := s.createHTTPServer()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "crating global tracer")
 	}
 
 	grpc_prometheus.Register(grpcServer)

@@ -350,12 +350,12 @@
   version = "v1.0.0"
 
 [[projects]]
-  digest = "1:505790f79f26847403ed73b309c514c566e2da26a253139ef64972e97346ce18"
+  digest = "1:22f696cee54865fb8e9ff91df7b633f6b8f22037a8015253c6b6a71ca82219c7"
   name = "go.uber.org/atomic"
   packages = ["."]
   pruneopts = "NUT"
-  revision = "4e336646b2ef9fc6e47be8e21594178f98e5ebcf"
-  version = "v1.2.0"
+  revision = "1ea20fb1cbb1cc08cbd0d913a96dead89aa18289"
+  version = "v1.3.2"
 
 [[projects]]
   digest = "1:58ca93bdf81bac106ded02226b5395a0595d5346cdc4caa8d9c1f3a5f8f9976e"
@@ -504,6 +504,7 @@
     "github.com/magiconair/properties/assert",
     "github.com/opentracing/opentracing-go",
     "github.com/philips/go-bindata-assetfs",
+    "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/spf13/cobra",
     "github.com/spf13/viper",
