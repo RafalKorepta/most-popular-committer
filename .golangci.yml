@@ -1,0 +1,42 @@
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  govet:
+    check-shadowing: true
+  golint:
+    min-confidence: 0
+  gofmt:
+    simplify: true
+  gocyclo:
+    min-complexity: 10
+  maligned:
+    suggest-new: true
+  dupl:
+    threshold: 100
+  goconst:
+    min-len: 2
+    min-occurrences: 2
+  depguard:
+    list-type: blacklist
+    packages:
+      # logging is allowed only by logutils.Log, logrus
+      # is allowed to use only in logutils package
+      - github.com/sirupsen/logrus
+  misspell:
+    locale: US
+
+linters:
+  enable-all: true
+  disable:
+  - maligned
+  - prealloc
+  - gochecknoglobals
+  - gochecknoinits
+
+run:
+  concurrency: 8
+
+output:
+  format: colored-line-number
+
