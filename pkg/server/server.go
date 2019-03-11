@@ -36,7 +36,6 @@ import (
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
-	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	grpc_opentracing "github.com/grpc-ecosystem/go-grpc-middleware/tracing/opentracing"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
@@ -134,10 +133,10 @@ func initializeGlobalTracer(serverName string, logger *zap.Logger, sugar *zap.Su
 	return closer, nil
 }
 
-func registerEmailService(serverOpts ...grpc.ServerOption) *grpc.Server {
+func registerEmailService(s pb.CommitterServiceServer, serverOpts ...grpc.ServerOption) *grpc.Server {
 	grpcServer := grpc.NewServer(serverOpts...)
 
-	pb.RegisterCommitterServiceServer(grpcServer, &committerService{})
+	pb.RegisterCommitterServiceServer(grpcServer, s)
 
 	return grpcServer
 }
@@ -146,10 +145,6 @@ func createGRPCOptions(addr string, s SecureConfig, ratePerSecond int64, capacit
 	var opts []grpc.ServerOption
 
 	grpc_zap.ReplaceGrpcLogger(zap.L())
-
-	optsCtx := []grpc_ctxtags.Option{
-		grpc_ctxtags.WithFieldExtractor(grpc_ctxtags.CodeGenRequestFieldExtractor),
-	}
 
 	optZap := []grpc_zap.Option{
 		// Add filed to logs that comes from gRPC middleware
@@ -163,26 +158,13 @@ func createGRPCOptions(addr string, s SecureConfig, ratePerSecond int64, capacit
 		zap.Int64("Rate per second", ratePerSecond),
 	)
 
-	unaryAndStreamRateLimiter := tokenbucket.NewTokenBucketRateLimiter(
+	unaryRateLimiter := tokenbucket.NewTokenBucketRateLimiter(
 		time.Second/time.Duration(ratePerSecond), capacity, 1)
 
-	opts = append(opts, grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
-		grpc_ctxtags.StreamServerInterceptor(optsCtx...),
-		grpc_opentracing.StreamServerInterceptor(),
-		grpc_ratelimit.StreamServerInterceptor(
-			grpc_ratelimit.WithLimiter(unaryAndStreamRateLimiter),
-			grpc_ratelimit.WithMaxWaitDuration(time.Microsecond), // Almost no wait for bucket to be filled
-		),
-		grpc_prometheus.StreamServerInterceptor,
-		grpc_zap.StreamServerInterceptor(zap.L(), optZap...),
-		grpc_recovery.StreamServerInterceptor(),
-	)))
-
 	opts = append(opts, grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-		grpc_ctxtags.UnaryServerInterceptor(optsCtx...),
 		grpc_opentracing.UnaryServerInterceptor(),
 		grpc_ratelimit.UnaryServerInterceptor(
-			grpc_ratelimit.WithLimiter(unaryAndStreamRateLimiter),
+			grpc_ratelimit.WithLimiter(unaryRateLimiter),
 			grpc_ratelimit.WithMaxWaitDuration(time.Microsecond), // Almost no wait for bucket to be filled
 		),
 		grpc_prometheus.UnaryServerInterceptor,
@@ -273,7 +255,7 @@ func (s *Server) createHTTPServer() (*http.Server, *grpc.Server, error) {
 		return nil, nil, err
 	}
 
-	grpcServer := registerEmailService(serverOpts...)
+	grpcServer := registerEmailService(&committerService{logger: s.logger}, serverOpts...)
 
 	dialOpts, err := createDialOpts(s.serverName, s.secureCfg.secure, s.secureCfg.certFile)
 	if err != nil {

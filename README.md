@@ -17,6 +17,13 @@ After that please run command:
 make run
 ```
 
+## Endpoints
+
+- http://ip:9091/v1alpha1/committer?language=java
+- http://ip:9091/swagger.json
+- http://ip:9091/swagger-ui
+- http://ip:9091/metrics
+
 # Rate limiting
 
 The grpc rate limiting is not available yet. 

@@ -41,5 +41,5 @@ message CommitterResponse {
 
 message Committer {
     string name = 1;
-    string commits = 2;
+    uint64 commits = 2;
 }

@@ -16,18 +16,89 @@ package server
 
 import (
 	"context"
-	"time"
+	"sort"
+
+	"go.uber.org/zap"
 
 	pb "github.com/RafalKorepta/most-popular-committer/pkg/api/committer"
+	"github.com/google/go-github/github"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+const (
+	maxTopRatedProjects = 5
+	maxContributors     = 10
 )
 
 type committerService struct {
+	logger *zap.Logger
 	pb.CommitterServiceServer
 }
 
 // MostActiveCommitter return list of most active committer per project which have the most github start for
 // requested language
-func (s *committerService) MostActiveCommitter(context.Context, *pb.CommitterRequest) (*pb.CommitterResponse, error) {
-	time.Sleep(time.Second)
-	return &pb.CommitterResponse{}, nil
+func (s *committerService) MostActiveCommitter(ctx context.Context,
+	req *pb.CommitterRequest) (*pb.CommitterResponse, error) {
+
+	if req.Language == "" {
+		return nil, status.Error(codes.InvalidArgument, "Language need to be provided")
+	}
+
+	client := github.NewClient(nil)
+
+	s.logger.Debug("Created github client")
+
+	rsr, _, err := client.Search.Repositories(ctx, "language:"+req.Language, &github.SearchOptions{
+		Sort:  "stars",
+		Order: "desc",
+		ListOptions: github.ListOptions{
+			Page:    0,
+			PerPage: maxTopRatedProjects,
+		},
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "Failed to search for projects")
+	}
+
+	s.logger.Debug("Retrieve repositories", zap.Any("repositories list", rsr))
+
+	resp := &pb.CommitterResponse{
+		Language: req.Language,
+	}
+
+	for _, repo := range rsr.Repositories {
+		contributors, _, err := client.Repositories.ListContributors(
+			ctx,
+			*repo.Owner.Login,
+			*repo.Name,
+			&github.ListContributorsOptions{
+				Anon: "true",
+				ListOptions: github.ListOptions{
+					Page:    0,
+					PerPage: maxContributors,
+				},
+			})
+		if err != nil {
+			return nil, status.Error(codes.Internal, "Failed to adds contributors")
+		}
+
+		for _, c := range contributors {
+			if c.Login == nil {
+				continue
+			}
+
+			resp.Contributors = append(resp.Contributors, &pb.Committer{
+				Name:    *c.Login,
+				Commits: uint64(*c.Contributions),
+			})
+		}
+	}
+
+	sort.Slice(resp.Contributors, func(i, j int) bool {
+		return resp.Contributors[i].Commits > resp.Contributors[j].Commits
+	})
+
+	resp.Contributors = resp.Contributors[:maxContributors]
+	return resp, nil
 }

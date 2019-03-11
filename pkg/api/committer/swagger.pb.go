@@ -52,7 +52,8 @@ const (
           "type": "string"
         },
         "commits": {
-          "type": "string"
+          "type": "string",
+          "format": "uint64"
         }
       }
     },

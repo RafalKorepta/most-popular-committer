@@ -47,6 +47,22 @@
   revision = "b5d812f8a3706043e23a9cd5babf2e5423744d30"
 
 [[projects]]
+  digest = "1:b4303d38d92c00af6603f3b865a9bd20e3c50cebe55489e5aeb721c26750e375"
+  name = "github.com/google/go-github"
+  packages = ["github"]
+  pruneopts = "NUT"
+  revision = "7462feb2032c2da9e3b85e9b04e6853a6e9e14ca"
+  version = "v24.0.1"
+
+[[projects]]
+  digest = "1:a63cff6b5d8b95638bfe300385d93b2a6d9d687734b863da8e09dc834510a690"
+  name = "github.com/google/go-querystring"
+  packages = ["query"]
+  pruneopts = "NUT"
+  revision = "44c6ddd0a2342c386950e880b658017258da92fc"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:31e5390853209cc2dbffa245c252339bca120db24fdd16955c6c5f73d23d0d37"
   name = "github.com/grpc-ecosystem/go-grpc-middleware"
   packages = [
@@ -492,10 +508,10 @@
   analyzer-version = 1
   input-imports = [
     "github.com/golang/protobuf/proto",
+    "github.com/google/go-github/github",
     "github.com/grpc-ecosystem/go-grpc-middleware",
     "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap",
     "github.com/grpc-ecosystem/go-grpc-middleware/recovery",
-    "github.com/grpc-ecosystem/go-grpc-middleware/tags",
     "github.com/grpc-ecosystem/go-grpc-middleware/tracing/opentracing",
     "github.com/grpc-ecosystem/go-grpc-prometheus",
     "github.com/grpc-ecosystem/grpc-gateway/runtime",
