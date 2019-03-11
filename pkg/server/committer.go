@@ -16,6 +16,8 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"net/http"
 	"sort"
 
 	"go.uber.org/zap"
@@ -45,7 +47,12 @@ func (s *committerService) MostActiveCommitter(ctx context.Context,
 		return nil, status.Error(codes.InvalidArgument, "Language need to be provided")
 	}
 
-	client := github.NewClient(nil)
+	// Because of problems with docker running on osx I disable tls verification
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // nolint:gosec
+	}
+
+	client := github.NewClient(&http.Client{Transport: tr})
 
 	s.logger.Debug("Created github client")
 
@@ -58,6 +65,7 @@ func (s *committerService) MostActiveCommitter(ctx context.Context,
 		},
 	})
 	if err != nil {
+		s.logger.Error("Failed to query to projects", zap.Error(err))
 		return nil, status.Error(codes.Internal, "Failed to search for projects")
 	}
 
@@ -80,6 +88,7 @@ func (s *committerService) MostActiveCommitter(ctx context.Context,
 				},
 			})
 		if err != nil {
+			s.logger.Error("Failed to query to contributors", zap.Error(err))
 			return nil, status.Error(codes.Internal, "Failed to adds contributors")
 		}
 

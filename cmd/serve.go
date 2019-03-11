@@ -45,7 +45,7 @@ the given programmatic language`,
 	Run: func(cmd *cobra.Command, args []string) {
 		listener, err := net.ListenTCP("tcp",
 			&net.TCPAddr{
-				IP:   net.ParseIP("127.0.0.1"),
+				IP:   nil,
 				Port: viper.GetInt(portNumberFlag),
 			})
 		if err != nil {

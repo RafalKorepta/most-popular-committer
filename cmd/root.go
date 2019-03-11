@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:generate go run script/gen_markdown_docs.go
-
 package cmd
 
 import (
@@ -29,7 +27,7 @@ import (
 )
 
 const (
-	DebugFlag      = "debug"
+	LogLevel       = "log_level"
 	configPathFlag = "cfg_path"
 	configFlag     = "config"
 )
@@ -68,7 +66,8 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().BoolP(DebugFlag, "d", false, "turn on debug logging")
+	rootCmd.PersistentFlags().StringP(LogLevel, "l", "DEBUG",
+		"Set logging level. Available DEBUG, INFO, WARN, ERROR, DPANIC, PANIC, FATAL")
 	rootCmd.PersistentFlags().String(configPathFlag, ".", "Relative path where config resides")
 	rootCmd.PersistentFlags().String(configFlag, ".most-popular-committer",
 		"config file (default is $HOME/.most-popular-committer.yml)")
@@ -93,8 +92,9 @@ func initConfig() {
 
 	// Update global logger in debug configuration
 	cfg := zap.NewDevelopmentConfig()
-	if viper.GetBool("debug") {
-		cfg.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	err := cfg.Level.UnmarshalText([]byte(viper.GetString(LogLevel)))
+	if err != nil {
+		log.Fatalf("Unable to convert log level. Error: %v", err)
 	}
 
 	newLogger, err := cfg.Build(zap.AddStacktrace(zap.ErrorLevel),
