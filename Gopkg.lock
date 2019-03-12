@@ -311,11 +311,12 @@
   version = "v0.1.1"
 
 [[projects]]
-  digest = "1:4fec2fe9ce617252d634de83ca8dd5f9c7c391637540896542c80ab63f071f51"
+  digest = "1:137e260ddedd6466e5705fd8eb76ce9c3401dd0f44bc096550e1f9c5dc3eea09"
   name = "github.com/stretchr/testify"
   packages = [
     "assert",
     "mock",
+    "require",
   ]
   pruneopts = "NUT"
   revision = "ffdc059bfe9ce6a4e144ba849dbedead332c6053"
@@ -526,6 +527,7 @@
     "github.com/spf13/viper",
     "github.com/stretchr/testify/assert",
     "github.com/stretchr/testify/mock",
+    "github.com/stretchr/testify/require",
     "github.com/uber/jaeger-client-go/config",
     "github.com/uber/jaeger-lib/metrics/prometheus",
     "github.com/veqryn/h2c",
