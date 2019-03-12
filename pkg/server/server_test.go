@@ -18,6 +18,8 @@ import (
 	"net"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -62,12 +64,20 @@ func TestNewServer(t *testing.T) {
 		assert.Equal(t, "most-popular-committer", srv.serverName)
 	})
 
-	t.Run("Valid new server with overwritten server name", func(t *testing.T) {
+	t.Run("Valid new server with all functional options", func(t *testing.T) {
 		// Given network listener
 		mockListener := &mockListener{}
 
 		// When creating new server
-		srv, err := NewServer(mockListener, WithServerName("backend"))
+		srv, err := NewServer(mockListener,
+			WithServerName("backend"),
+			WithLogger(zap.L()),
+			WithCertFile("../certs/local_certs/server.pem"),
+			WithKeyFile("../certs/local_certs/server.key"),
+			WithSecure(true),
+			WithCapacity(10),
+			WithRate(25),
+		)
 
 		// Then an error is returned
 		assert.NoError(t, err)

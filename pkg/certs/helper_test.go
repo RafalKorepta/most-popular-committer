@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"os"
 
 	"fmt"
@@ -90,6 +92,51 @@ func Test_CreateX509Pool(t *testing.T) {
 		// Assert
 		assert.Error(t, err, "Error must occur")
 		assert.Nil(t, certPool, "certPool must not exist")
+	})
+}
+
+func TestCreatePool(t *testing.T) {
+	helperLoadFiles(t)
+	defer cleanup()
+
+	t.Run("Failed when cert file is an empty file", func(t *testing.T) {
+		_, err := CreatePool(filepath.Join(testData, "temp.pem"))
+
+		require.Error(t, err)
+	})
+
+	t.Run("Failed when file does not exist", func(t *testing.T) {
+		_, err := CreatePool("non existing file")
+
+		require.Error(t, err)
+	})
+
+	t.Run("Successful creates certificates pool", func(t *testing.T) {
+		pool, err := CreatePool(filepath.Join(testData, "server.pem"))
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, pool.Subjects())
+	})
+}
+
+func TestCreateTLSConfig(t *testing.T) {
+	t.Run("Failed when cert file does not exist", func(t *testing.T) {
+		_, err := CreateTLSConfig("non existing file", filepath.Join(testData, "server.key"))
+
+		require.Error(t, err)
+	})
+
+	t.Run("Failed when key file does not exist", func(t *testing.T) {
+		_, err := CreateTLSConfig(filepath.Join(testData, "server.pem"), "non existing file")
+
+		require.Error(t, err)
+	})
+
+	t.Run("Successful creates http tls config", func(t *testing.T) {
+		tlsCfg, err := CreateTLSConfig(filepath.Join(testData, "server.pem"), filepath.Join(testData, "server.key"))
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, tlsCfg.Certificates)
 	})
 }
 

@@ -11,13 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package certs
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
+
+	"github.com/pkg/errors"
 )
 
 func CreateX509Pool(cert io.Reader) (*x509.CertPool, error) {
@@ -36,4 +41,28 @@ func CreateX509Pool(cert io.Reader) (*x509.CertPool, error) {
 		return nil, fmt.Errorf("could not append certificate")
 	}
 	return demoCertPool, nil
+}
+
+func CreatePool(certFile string) (*x509.CertPool, error) {
+	f, err := os.Open(certFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "opaning file")
+	}
+	certPool, err := CreateX509Pool(f)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating x509 pool")
+	}
+	return certPool, nil
+}
+
+func CreateTLSConfig(certFile, keyFile string) (*tls.Config, error) {
+	keyPair, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create x509 key pair certificate: %v", err)
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{keyPair},
+		NextProtos:   []string{"h2"},
+	}, nil
 }

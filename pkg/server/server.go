@@ -17,13 +17,10 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -32,7 +29,8 @@ import (
 	"github.com/RafalKorepta/most-popular-committer/pkg/log"
 	grpc_ratelimit "github.com/RafalKorepta/most-popular-committer/pkg/ratelimit"
 	"github.com/RafalKorepta/most-popular-committer/pkg/ratelimit/tokenbucket"
-	"github.com/RafalKorepta/most-popular-committer/pkg/ui/data/swagger"
+	"github.com/RafalKorepta/most-popular-committer/pkg/ui"
+	"github.com/google/go-github/github"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
@@ -40,7 +38,6 @@ import (
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/opentracing/opentracing-go"
-	assetfs "github.com/philips/go-bindata-assetfs"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/uber/jaeger-client-go/config"
@@ -96,12 +93,18 @@ func (s *Server) Serve() error {
 	}
 	defer tracerCloser.Close()
 
-	srv, grpcServer, err := s.createHTTPServer()
-	if err != nil {
-		return errors.Wrap(err, "crating global tracer")
+	var srv *http.Server
+	if s.secureCfg.secure {
+		srv, err = s.createHTTPSServer()
+		if err != nil {
+			return errors.Wrap(err, "crating https server")
+		}
+	} else {
+		srv, err = s.createHTTPServer()
+		if err != nil {
+			return errors.Wrap(err, "crating http server")
+		}
 	}
-
-	grpc_prometheus.Register(grpcServer)
 
 	defer s.listener.Close()
 	if s.secureCfg.secure {
@@ -133,7 +136,97 @@ func initializeGlobalTracer(serverName string, logger *zap.Logger, sugar *zap.Su
 	return closer, nil
 }
 
-func registerEmailService(s pb.CommitterServiceServer, serverOpts ...grpc.ServerOption) *grpc.Server {
+func (s *Server) createHTTPServer() (*http.Server, error) {
+	addr := s.listener.Addr().String()
+
+	// Because of problems with docker running on osx I disable tls verification
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // nolint:gosec
+	}
+
+	client := github.NewClient(&http.Client{Transport: tr})
+
+	service := &committerService{
+		logger:             s.logger,
+		repoGetter:         client.Search,
+		contributorsGetter: client.Repositories,
+	}
+
+	grpcServer := registerCommitterService(service, createGRPCOptions(s.rate, s.capacity)...)
+
+	grpc_prometheus.Register(grpcServer)
+
+	dialOpts := []grpc.DialOption{grpc.WithInsecure()}
+
+	mux, err := registerServerMux(addr, dialOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	rootHandler := &h2c.HandlerH2C{
+		Handler:  grpcHandlerFunc(grpcServer, mux),
+		H2Server: &http2.Server{},
+	}
+
+	return &http.Server{
+		Addr:    addr,
+		Handler: rootHandler,
+	}, nil
+}
+
+func (s *Server) createHTTPSServer() (*http.Server, error) {
+	addr := s.listener.Addr().String()
+
+	// Because of problems with docker running on osx I disable tls verification
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // nolint:gosec
+	}
+
+	client := github.NewClient(&http.Client{Transport: tr})
+
+	service := &committerService{
+		logger:             s.logger,
+		repoGetter:         client.Search,
+		contributorsGetter: client.Repositories,
+	}
+
+	serverOpts := createGRPCOptions(s.rate, s.capacity)
+
+	certPool, err := certs.CreatePool(s.secureCfg.certFile)
+	if err != nil {
+		return nil, err
+	}
+	serverOpts = append(serverOpts, grpc.Creds(credentials.NewClientTLSFromCert(certPool, addr)))
+
+	grpcServer := registerCommitterService(service, serverOpts...)
+
+	grpc_prometheus.Register(grpcServer)
+
+	dialOpts, err := createSecureDialOpts(s.serverName, s.secureCfg.certFile)
+	if err != nil {
+		return nil, err
+	}
+
+	mux, err := registerServerMux(addr, dialOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	rootHandler := grpcHandlerFunc(grpcServer, mux)
+
+	tlsCfg, err := certs.CreateTLSConfig(s.secureCfg.certFile, s.secureCfg.keyFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Server{
+		Addr:      addr,
+		Handler:   rootHandler,
+		TLSConfig: tlsCfg,
+	}, nil
+}
+
+func registerCommitterService(s pb.CommitterServiceServer, serverOpts ...grpc.ServerOption) *grpc.Server {
 	grpcServer := grpc.NewServer(serverOpts...)
 
 	pb.RegisterCommitterServiceServer(grpcServer, s)
@@ -141,7 +234,7 @@ func registerEmailService(s pb.CommitterServiceServer, serverOpts ...grpc.Server
 	return grpcServer
 }
 
-func createGRPCOptions(addr string, s SecureConfig, ratePerSecond int64, capacity int64) ([]grpc.ServerOption, error) {
+func createGRPCOptions(ratePerSecond int64, capacity int64) []grpc.ServerOption {
 	var opts []grpc.ServerOption
 
 	grpc_zap.ReplaceGrpcLogger(zap.L())
@@ -172,16 +265,24 @@ func createGRPCOptions(addr string, s SecureConfig, ratePerSecond int64, capacit
 		grpc_recovery.UnaryServerInterceptor(),
 	)))
 
-	if s.secure {
-		certPool, err := createPool(s.certFile)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, grpc.Creds(credentials.NewClientTLSFromCert(certPool, addr)))
-	}
-	return opts, nil
+	return opts
 }
 
+func createSecureDialOpts(serverOverrideName string, certFile string) ([]grpc.DialOption, error) {
+	certPool, err := certs.CreatePool(certFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "crating certificate pool")
+	}
+	tCreds := credentials.NewTLS(&tls.Config{
+		// Only connection from localhost will be accepted until
+		// certificate will have Subject Alternative Name init
+		ServerName: serverOverrideName,
+		RootCAs:    certPool,
+	})
+	return []grpc.DialOption{grpc.WithTransportCredentials(tCreds)}, nil
+}
+
+// registerServerMux is helper function that registers many http1.1 endpoints in mux
 func registerServerMux(addr string, dialOpts ...grpc.DialOption) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/swagger.json", func(w http.ResponseWriter, req *http.Request) {
@@ -202,98 +303,9 @@ func registerServerMux(addr string, dialOpts ...grpc.DialOption) (*http.ServeMux
 
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/", gwmux)
-	serveSwagger(mux)
+	ui.ServeSwagger(mux)
 
 	return mux, nil
-}
-
-func createDialOpts(serverOverrideName string, secure bool, certFile string) ([]grpc.DialOption, error) {
-	if secure {
-		certPool, err := createPool(certFile)
-		if err != nil {
-			return nil, err
-		}
-		dcreds := credentials.NewTLS(&tls.Config{
-			// Only connection from localhost will be accepted until
-			// certificate will have Subject Alternative Name init
-			ServerName: serverOverrideName,
-			RootCAs:    certPool,
-		})
-		return []grpc.DialOption{grpc.WithTransportCredentials(dcreds)}, nil
-	}
-	return []grpc.DialOption{grpc.WithInsecure()}, nil
-}
-
-func createPool(certFile string) (*x509.CertPool, error) {
-	f, err := os.Open(certFile)
-	if err != nil {
-		zap.L().Error("Unable to open cert file", zap.Error(err))
-	}
-	certPool, err := certs.CreateX509Pool(f)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create x509 cert pool: %v", err)
-	}
-	return certPool, nil
-}
-
-func createServerMainHandler(secure bool, grpcServer, mux http.Handler) http.Handler {
-	if secure {
-		return grpcHandlerFunc(grpcServer, mux)
-	}
-	// Wrap the Router
-	return &h2c.HandlerH2C{
-		Handler:  grpcHandlerFunc(grpcServer, mux),
-		H2Server: &http2.Server{},
-	}
-}
-
-func (s *Server) createHTTPServer() (*http.Server, *grpc.Server, error) {
-	addr := s.listener.Addr().String()
-
-	serverOpts, err := createGRPCOptions(addr, s.secureCfg, s.rate, s.capacity)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	grpcServer := registerEmailService(&committerService{logger: s.logger}, serverOpts...)
-
-	dialOpts, err := createDialOpts(s.serverName, s.secureCfg.secure, s.secureCfg.certFile)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	mux, err := registerServerMux(addr, dialOpts...)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	rootHandler := createServerMainHandler(s.secureCfg.secure, grpcServer, mux)
-
-	tlsCfg, err := createTLSConfig(s.secureCfg.secure, s.secureCfg.certFile, s.secureCfg.keyFile)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return &http.Server{
-		Addr:      addr,
-		Handler:   rootHandler,
-		TLSConfig: tlsCfg,
-	}, grpcServer, nil
-}
-
-func createTLSConfig(secure bool, certFile, keyFile string) (*tls.Config, error) {
-	if secure {
-		keyPair, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to create x509 key pair certificate: %v", err)
-		}
-
-		return &tls.Config{
-			Certificates: []tls.Certificate{keyPair},
-			NextProtos:   []string{"h2"},
-		}, nil
-	}
-	return nil, nil
 }
 
 // grpcHandlerFunc returns an http.Handler that delegates to grpcServer on incoming gRPC
@@ -309,23 +321,4 @@ func grpcHandlerFunc(grpcServer, otherHandler http.Handler) http.Handler {
 			otherHandler.ServeHTTP(w, r)
 		}
 	})
-}
-
-// serveSwagger will register `/swagger-ui` endpoint into root mux.
-// This will provide visual representation of gRPC contract
-// The swagger-ui is auto generated by script located in `hack/build-ui.sh`
-func serveSwagger(mux *http.ServeMux) {
-	err := mime.AddExtensionType(".svg", "image/svg+xml")
-	if err != nil {
-		zap.L().Error("Unable to add extension type", zap.Error(err))
-	}
-
-	// Expose files in third_party/swagger-ui/ on <host>/swagger-ui
-	fileServer := http.FileServer(&assetfs.AssetFS{
-		Asset:    swagger.Asset,
-		AssetDir: swagger.AssetDir,
-		Prefix:   "third_party/swagger-ui",
-	})
-	prefix := "/swagger-ui/"
-	mux.Handle(prefix, http.StripPrefix(prefix, fileServer))
 }

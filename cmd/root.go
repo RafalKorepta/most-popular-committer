@@ -91,7 +91,7 @@ func initConfig() {
 	}
 
 	// Update global logger in debug configuration
-	cfg := zap.NewDevelopmentConfig()
+	cfg := zap.NewProductionConfig()
 	err := cfg.Level.UnmarshalText([]byte(viper.GetString(LogLevel)))
 	if err != nil {
 		log.Fatalf("Unable to convert log level. Error: %v", err)

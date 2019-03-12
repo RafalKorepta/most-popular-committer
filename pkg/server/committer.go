@@ -16,8 +16,6 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
-	"net/http"
 	"sort"
 
 	"go.uber.org/zap"
@@ -34,29 +32,33 @@ const (
 )
 
 type committerService struct {
-	logger *zap.Logger
+	logger             *zap.Logger
+	repoGetter         RepositoryGetter
+	contributorsGetter ContributorsGetter
+
 	pb.CommitterServiceServer
 }
 
-// MostActiveCommitter return list of most active committer per project which have the most github start for
+type RepositoryGetter interface {
+	// nolint
+	Repositories(ctx context.Context, query string, opt *github.SearchOptions) (*github.RepositoriesSearchResult, *github.Response, error)
+}
+
+type ContributorsGetter interface {
+	// nolint
+	ListContributors(ctx context.Context, owner string, repoName string, opt *github.ListContributorsOptions) ([]*github.Contributor, *github.Response, error)
+}
+
+// MostActiveCommitter returns list of most active committer per project which have the most github stars for
 // requested language
 func (s *committerService) MostActiveCommitter(ctx context.Context,
 	req *pb.CommitterRequest) (*pb.CommitterResponse, error) {
 
 	if req.Language == "" {
-		return nil, status.Error(codes.InvalidArgument, "Language need to be provided")
+		return nil, status.Error(codes.InvalidArgument, "Language needs to be provided")
 	}
 
-	// Because of problems with docker running on osx I disable tls verification
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // nolint:gosec
-	}
-
-	client := github.NewClient(&http.Client{Transport: tr})
-
-	s.logger.Debug("Created github client")
-
-	rsr, _, err := client.Search.Repositories(ctx, "language:"+req.Language, &github.SearchOptions{
+	rsr, _, err := s.repoGetter.Repositories(ctx, "language:"+req.Language, &github.SearchOptions{
 		Sort:  "stars",
 		Order: "desc",
 		ListOptions: github.ListOptions{
@@ -65,18 +67,24 @@ func (s *committerService) MostActiveCommitter(ctx context.Context,
 		},
 	})
 	if err != nil {
-		s.logger.Error("Failed to query to projects", zap.Error(err))
-		return nil, status.Error(codes.Internal, "Failed to search for projects")
+		s.logger.Error("Failed to query projects", zap.Error(err))
+		return nil, status.Error(codes.Internal, "Failed at finding projects")
 	}
 
-	s.logger.Debug("Retrieve repositories", zap.Any("repositories list", rsr))
+	s.logger.Debug("Retrieved repositories", zap.Any("repositories list", rsr))
+
+	return s.collectContributors(ctx, rsr, req.Language)
+}
+
+func (s *committerService) collectContributors(ctx context.Context, r *github.RepositoriesSearchResult,
+	language string) (*pb.CommitterResponse, error) {
 
 	resp := &pb.CommitterResponse{
-		Language: req.Language,
+		Language: language,
 	}
 
-	for _, repo := range rsr.Repositories {
-		contributors, _, err := client.Repositories.ListContributors(
+	for _, repo := range r.Repositories {
+		contributors, _, err := s.contributorsGetter.ListContributors(
 			ctx,
 			*repo.Owner.Login,
 			*repo.Name,
@@ -88,8 +96,8 @@ func (s *committerService) MostActiveCommitter(ctx context.Context,
 				},
 			})
 		if err != nil {
-			s.logger.Error("Failed to query to contributors", zap.Error(err))
-			return nil, status.Error(codes.Internal, "Failed to adds contributors")
+			s.logger.Error("Failed to query contributors", zap.Error(err))
+			return nil, status.Error(codes.Internal, "Failed at finding contributors")
 		}
 
 		for _, c := range contributors {
@@ -108,6 +116,9 @@ func (s *committerService) MostActiveCommitter(ctx context.Context,
 		return resp.Contributors[i].Commits > resp.Contributors[j].Commits
 	})
 
-	resp.Contributors = resp.Contributors[:maxContributors]
+	if len(resp.Contributors) > maxContributors {
+		resp.Contributors = resp.Contributors[:maxContributors]
+	}
+
 	return resp, nil
 }
